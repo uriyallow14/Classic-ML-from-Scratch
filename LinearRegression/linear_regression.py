@@ -1,65 +1,94 @@
 import numpy as np
 from typing import Dict, List
+from abc import ABC, abstractmethod
 
 
-class LinearRegressor(object):
-    def __init__(self, fit_intercept=True):
-        pass
-
-
-class OLSLinearRegression:
-    def __init__(self, solver='ols'):
-        """
-        fit_intercept - whether too add an intercept to the model or not.
-        solver - two possible values:
-            1. 'OLS' - calculating weights w using closed-form solution
-            2. 'GD' - calculating weights w iteratively, using gradient-descent method
-        """
+class LinearRegression(ABC):
+    """
+    Abstarct base class for linear regression models.
+    Child classes must implement fit(X, y) and set self.w (1D np.ndarray)
+    If fit_intercept=True, self.w[0] is the bias term.
+    """
+    def __init__(self, fit_intercept: bool = True):
+        self.fit_intercept = fit_intercept
         self.w = None
-        self.solver = solver
+    
+    @abstractmethod
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        raise NotImplementedError
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        if self.fit_intercept:
+            X = self._add_bias(X)
+        if self.w is None:
+            raise ValueError("Model is not fitted yet. Call . fit(X, y) first.")
+        return X @ self.w
+    
+    @staticmethod
+    def _add_bias(X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        ones = np.ones((X.shape[0], 1))
+        return np.hstack((ones, X))
+    
+    def score(self, X: np.ndarray, y: np.ndarray) -> float:
+        """ R^2 Score"""
+        y = np.asarray(y)
+        y_pred = self.predict(X)
+        ss_res = np.sum((y - y_pred) ** 2)
+        ss_tot = np.sum((y - np.mean(y)) ** 2)
+        return 1 - ss_res / ss_tot
 
+class GDLinearRegression(LinearRegression):
+    """ Gradient Descent linear regression. stores weights in self.w .
+    """
+    def __init__(self, lr: float = 0.001, n_iters: int = 1000, fit_intercept: bool = True):
+        super().__init__(fit_intercept=fit_intercept)
+        self.lr = lr
+        self.n_iters = n_iters
+        self.loss_history = []
+    
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X = np.asarray(X)
+        y = np.asarray(y)
+
+        if self.fit_intercept:
+            X = self._add_bias(X)
+        
+        n_samples, n_features = X.shape
+        self.w = np.zeros(n_features, dtype=float)
+
+        for it in range(self.n_iters):
+            y_pred = X @ self.w
+            error =  - y
+            grad = (1 / n_samples) * (X.T @ error)
+            self.w = self.w - self.lr * grad
+            # loss
+            mse = np.mean(error ** 2)
+            self.loss_history.append(mse)
+
+
+        
+class OLSLinearRegression(LinearRegression):
+    """
+        Closed-form Ordinary Least Squares using psuedoinverse.
+    """
+    def __init__(self, fit_intercept: bool = True):
+        super().__init__(fit_intercept=fit_intercept)
     
     def fit(self, X, y):
-        """
-        Fit optimal weights to data using closed form solution.
-        :param X: A numpy array of shape (m,n_features_) where m is the number of samples.
-        :param y: A numpy array of shape (m,) where m is the number of samples.
-        """
-        X = self.apply_bias_trick(X)
-        if self.solver == 'ols':
-            X_transpose = np.transpose(X)
-            inverse_xtx = np.linalg.inv(np.matmul(X_transpose, X))
-            self.w = np.matmul(inverse_xtx, np.matmul(X_transpose, y))
+        X = np.asarray(X)
+        y = np.asarray(y)
 
-    def predict(self, x):
-        """
-        Predict the value of samples based on the current weights.
-        :param x: A numpy array of shape (m,n_features_) where m is the number of samples.
-        :return:
-            y_pred: np.ndarray of shape (m,) where each entry is the predicted
-                value of the corresponding sample.
-        """
-        x = self.apply_bias_trick(x)
-        pred = np.matmul(x, self.w)
-        return pred
-
-    @staticmethod
-    def apply_bias_trick(X):
-        """
-    Applies the bias trick to the input data.
-
-    Input:
-    - X: Input data (m instances over n features).
-
-    Returns:
-    - X: Input data with an additional column of ones in the
-        zeroth position (m instances over n+1 features).
-    """
-        ones = np.ones(X.shape[0]).reshape(-1, 1)
-        if np.ndim(X) == 1:
-            X = X.reshape(-1, 1)
-        X = np.hstack((ones, X))
-        return X
+        if self.fit_intercept:
+            X = self._add_bias(X)
+        X_transpose = np.transpose(X)
+        inverse_xtx = np.linalg.inv(np.matmul(X_transpose, X))
+        self.w = np.matmul(inverse_xtx, np.matmul(X_transpose, y))
 
 def preprocess(X, y):
     """
